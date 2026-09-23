@@ -1,10 +1,10 @@
 import os
 import asyncio
+import re
 import discord
 from google import genai
 from aiohttp import web
 
-# 環境変数
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PORT = int(os.getenv("PORT", 8080))
@@ -20,20 +20,29 @@ bot = discord.Client(intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"ログイン成功: {bot.user.name}")
+    print(f"ログイン成功: {bot.user.name} (ID: {bot.user.id})")
 
 @bot.event
 async def on_message(message: discord.Message):
+    # ボット自身の投稿は無視
     if message.author == bot.user:
         return
 
-    is_mentioned = bot.user in message.mentions
+    # DM判定
     is_dm = isinstance(message.channel, discord.DMChannel)
+
+    # サーバーチャンネルの場合、ボット宛てメンション（ユーザーID指定含む）を確実に検知
+    is_mentioned = False
+    if bot.user in message.mentions or f"<@{bot.user.id}>" in message.content or f"<@!{bot.user.id}>" in message.content:
+        is_mentioned = True
 
     if not (is_mentioned or is_dm):
         return
 
-    prompt = message.clean_content.replace(f"@{bot.user.name}", "").strip()
+    # メンション部分を正規表現で綺麗に除去してプロンプトを抽出
+    prompt = re.sub(r"<@!?" + str(bot.user.id) + r">", "", message.content).strip()
+    prompt = prompt.replace(f"@{bot.user.name}", "").strip()
+
     if not prompt:
         await message.reply("メッセージを入力してください。")
         return
@@ -55,7 +64,7 @@ async def on_message(message: discord.Message):
             print(f"エラー: {e}")
             await message.reply(f"エラーが発生しました: {e}")
 
-# Renderの無料枠（Web Service）として動かすためのヘルスチェック用Webサーバー
+# Render Web Service 用ヘルスチェックサーバー
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
 
